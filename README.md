@@ -1,152 +1,189 @@
-# Operia API, fases B, C y D
+# Operia API
 
-Backend NestJS con PostgreSQL y Prisma 7. Implementa acceso demo por cookie,
-selección de empresa y el CRUD de clientes con aislamiento por empresa.
+**Multi-tenant back-office API for small businesses: sales documents, cash register, stock and customer accounts.**
 
-## Inicio local
+![Node.js 22](https://img.shields.io/badge/Node.js-22-339933?logo=nodedotjs&logoColor=white)
+![NestJS 12](https://img.shields.io/badge/NestJS-12-E0234E?logo=nestjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Prisma 7](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)
+![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-435%20unit%20%2B%20198%20e2e-brightgreen)
 
-Requisitos: Node.js 22, pnpm 11 y PostgreSQL 16. También se puede levantar la
-base con Docker Compose desde la raíz del proyecto.
+## Overview
 
-1. Copiá `back/.env.example` a `back/.env` y configurá PostgreSQL. Las
-   contraseñas que trae el ejemplo son solo para desarrollo.
-2. Instalá dependencias con `pnpm install`.
-3. Ejecutá `pnpm db:setup` para generar el cliente, crear/aplicar la migración
-   inicial en modo desarrollo y cargar los datos demo.
-4. Iniciá Nest con `pnpm start:dev`; `GET /health` ejecuta una consulta real a
-   PostgreSQL.
+Operia helps a small business run its day-to-day operations from one place: register customers, issue sales documents, collect payments, open and close the cash register, track stock and see how the day is going on a dashboard.
 
-El Compose de la raíz aplica `prisma migrate deploy` y ejecuta el seed al iniciar
-solo cuando `RUN_SEED=true`; por defecto Compose lo deja desactivado (`false`).
-El archivo `.env.example` lo activa para desarrollo local y advierte que las
-credenciales demo son públicas y no deben reutilizarse. Las empresas y los usuarios demo se crean fuera del repo;
-el seed solo carga productos y comprobantes sobre empresas ya existentes. Los
-movimientos de cuenta corriente del frontend no se importan.
+One installation serves several companies (tenants) at the same time. Each user can belong to more than one company, but every session works on a single active company, and the data of one company is never visible to another.
 
-## Datos y acceso demo
+This repository is the **API**. The web application that consumes it lives in its own repository (see [Related](#related)).
 
-- Empresas: `operia-central` y `operia-hogar`.
-- `demo@operia.local`: acceso a las dos empresas.
-- `hogar@operia.local`: acceso solo a Operia Hogar.
-- Las contraseñas iniciales están en `back/.env.example`. Cambialas antes de
-  compartir el entorno; no son aptas para producción.
-- `Company`, `User`, `Membership`, `Session` y `Customer` se mapean a tablas y
-  columnas snake_case. Los clientes tienen CUIT de 11 dígitos y unicidad por
-  empresa. El saldo y los movimientos se derivarán en fases posteriores.
+## Key features
 
-El login crea un token aleatorio opaco; PostgreSQL almacena solo su SHA-256. La
-cookie `operia_session` es HTTP-only, SameSite=Lax y expira según
-`SESSION_TTL_HOURS` (8 horas por defecto). Las sesiones también expiran tras
-`SESSION_IDLE_MINUTES` sin actividad (60 minutos por defecto); `0` desactiva
-este vencimiento por inactividad. `COOKIE_SECURE=true` activa Secure
-para HTTPS. El cambio de empresa valida membresía en una transacción serializable.
-Las respuestas de login y sesión no se cachean.
+- **Multi-company isolation:** every query is scoped by the active company stored in the server-side session.
+- **Roles and permissions:** system and custom roles with fine-grained permissions enforced on every endpoint.
+- **Customers and customer accounts:** CUIT validation, accent-insensitive search, running balance and applied payments.
+- **Products and inventory:** catalog with categories and sub-types, stock movements and low-stock alerts.
+- **Sales documents:** numbered documents with items, totals and payment detail.
+- **Cash register:** opening, collections, movements and closing with totals.
+- **Notifications:** in-app notifications, email through an outbox with retries, and orders received through a Telegram bot.
+- **Dashboard:** daily sales, collections, outstanding balances and recent activity.
 
-## API de clientes
+## Tech stack
 
-Los endpoints `GET /customers`, `GET /customers/{id}`, `POST /customers`,
-`PATCH /customers/{id}`, `POST /customers/{id}/deactivation` y
-`PATCH /customers/{id}/status` requieren la cookie de sesión. El servidor obtiene
-la empresa activa de esa sesión; los campos `id`, `companyId` y `movements` no se
-aceptan en los cuerpos de escritura. Los CUIT se guardan en 11 dígitos, se muestran
-con guiones y son únicos dentro de cada empresa. Las respuestas no incluyen
-movimientos de cuenta corriente.
+| Area          | Choice                                                         |
+| ------------- | -------------------------------------------------------------- |
+| Runtime       | Node.js 22, TypeScript, ESM                                    |
+| Framework     | NestJS 12 on Express 5                                         |
+| Database      | PostgreSQL 16 with Prisma 7 (migrations, typed client, seed)   |
+| Validation    | Zod on every request body and query                            |
+| Security      | argon2id, Helmet, rate limiting, origin checks                 |
+| Testing       | Vitest (unit) and Supertest (end-to-end against a test database) |
+| Documentation | OpenAPI contract with Swagger UI                               |
+| Tooling       | pnpm 11, ESLint, Prettier, Docker Compose                      |
 
-La búsqueda admite razón social, nombre comercial, contacto, correo y CUIT, sin
-distinguir acentos, mayúsculas ni separadores del CUIT. Aún no hay paginación.
+## Security and quality highlights
 
-La documentación está en `http://localhost:3001/docs` y el contrato OpenAPI en
-`/docs-json` cuando `DOCS_ENABLED=true`. `DOCS_ENABLED` habilita la documentaciÃ³n
-fuera de producciÃ³n por defecto y la deshabilita en producciÃ³n. Compose y los
-archivos de ejemplo la habilitan para desarrollo local; en producciÃ³n configurÃ¡
-`DOCS_ENABLED=false` salvo que quieras exponerla explÃ­citamente. Se puede exportar
-el contrato sin base de datos con `pnpm openapi:export`.
+- Passwords hashed with **argon2id**; login returns a random opaque token and the database stores only its **SHA-256**.
+- Session cookie is `HttpOnly` and `SameSite=Lax`, `Secure` by default in production, and is cleared on any authentication failure.
+- Sessions expire by age, by **inactivity** (60 minutes by default), are capped per user, are purged periodically and can be closed all at once with `POST /auth/logout-all`.
+- **Rate limiting** for login (per IP, per IP and email, and per email) and for the API in general; trusted proxy hops are configurable.
+- State-changing requests validate `Origin`/`Referer` against an allow-list; request bodies are limited to 32 KB and oversized requests answer `413`.
+- API documentation is off by default in production and its Swagger UI assets are pinned and checked with Subresource Integrity.
+- Dependency audit (`pnpm audit --prod`) reports no known vulnerabilities.
+- **435 unit tests and 198 end-to-end tests**; end-to-end tests only run against a dedicated `operia_test` database.
+- Built with a **spec-driven workflow**: behavior is written down as testable requirements before it is implemented.
 
-`SESSION_MAX_PER_USER` limita a 10 las sesiones simultÃ¡neas por usuario y el
-login invalida las mÃ¡s antiguas al superar ese lÃ­mite. `SESSION_CLEANUP_MINUTES`
-elimina periÃ³dicamente sesiones vencidas (cada 60 minutos por defecto); el valor
-`0` desactiva el proceso. `SESSION_IDLE_MINUTES` vence sesiones tras 60 minutos
-sin actividad por defecto; el valor `0` desactiva la expiración por inactividad.
+## Architecture
 
-La limitación es en memoria por proceso: por defecto permite 30 intentos de login
-por IP y 5 por combinación de IP + email normalizado cada 15 minutos, además de
-un tope de respaldo de 100 intentos por email para ataques distribuidos. También
-permite 100 solicitudes anónimas por IP por minuto. `TRUST_PROXY_HOPS=0` (default)
-usa la conexión directa; detrás de un proxy de borde que agrega
-`X-Forwarded-For` (por ejemplo, nginx con `$proxy_add_x_forwarded_for`) configurá
-`TRUST_PROXY_HOPS=1`. El back no debe quedar publicado directamente al exterior.
-No está compartida entre réplicas y debe sustituirse por almacenamiento
-distribuido antes de escalar. Los métodos inseguros validan Origin o Referer
-contra `ALLOWED_ORIGINS` si el navegador envía alguno; CORS usa la misma lista.
-
-## Migraciones y comandos
-
-- `pnpm prisma:generate`: genera el cliente en `src/generated/prisma` (ignorado
-  por Git y recreado por los comandos de build, tipos y tests).
-- `pnpm prisma:migrate:dev`: crea/aplica migraciones durante desarrollo.
-- `pnpm prisma:migrate:deploy`: aplica migraciones existentes sin resetear datos.
-- `pnpm prisma:seed`: ejecuta el seed idempotente.
-- `pnpm test:e2e`: prepara y siembra la base `operia_test` antes de probar. Exige
-  que `DATABASE_URL_TEST` termine exactamente en `/operia_test`; no apunta a la
-  base de desarrollo.
-- `pnpm build`: genera el cliente Prisma y compila NestJS.
-- `pnpm openapi:export`: exporta el contrato OpenAPI a `openapi.json` sin conectar
-  a PostgreSQL.
-
-`operia_test` se crea mediante `../.docker/postgres/init.sql` al inicializar un
-volumen PostgreSQL vacío. Si el volumen ya existía antes de agregar esa
-instrucción, creá la base una vez manualmente antes de ejecutar e2e. Ningún
-comando de pruebas borra o resetea la base principal.
-
-Para correr los E2E localmente, copiá `.env.example` a `.env` dentro de `back/`,
-revisá las credenciales demo y asegurate de que `DATABASE_URL_TEST` apunte a
-`operia_test`. Luego ejecutá `pnpm test:e2e` desde `back/`.
-
-## Configuración
-
-`DATABASE_URL` y contraseñas demo son obligatorias. `DATABASE_URL_TEST`,
-`PORT`, `ALLOWED_ORIGINS` (orígenes separados por coma), `SESSION_TTL_HOURS`,
-`COOKIE_SECURE`, `SESSION_IDLE_MINUTES` (entero >= 0, default 60; `0` desactiva
-la expiración por inactividad), `TRUST_PROXY_HOPS` (entero >= 0), emails demo y
-límites de login se validan al iniciar. `RATE_LIMIT_LOGIN_IP_ATTEMPTS` (30) y
-`RATE_LIMIT_LOGIN_ACCOUNT_ATTEMPTS` (100) configuran los topes adicionales;
-ambos usan `RATE_LIMIT_LOGIN_WINDOW_MINUTES`. Los
-valores locales de muestra están en `back/.env.example` y en el `.env.example`
-de la raíz para Compose.
-
-`DATABASE_URL` es obligatoria para ejecutar el back. Para las pruebas E2E,
-configurá además `DATABASE_URL_TEST` con una conexión terminada exactamente en
-`/operia_test`. El runner valida esa ruta antes de aplicar migraciones o ejecutar
-el seed. `PORT`, `ALLOWED_ORIGINS`, `SESSION_TTL_HOURS`, `COOKIE_SECURE`, los
-emails demo y los límites de login tienen valores de desarrollo en el archivo de
-ejemplo; las contraseñas demo deben tener al menos 12 caracteres.
-
-## Estructura
-
-- `src/auth`: login, logout, sesiones opacas y tokens.
-- `src/companies`: listado y cambio de empresa activa.
-- `src/customers`: validación, búsqueda, mapper, servicio y endpoints de clientes.
-- `src/common`: seguridad HTTP, errores, CUIT, contexto de sesión y limitadores.
-- `prisma`: esquema, migraciones y seed demo.
-- `test`: pruebas E2E con Supertest contra `operia_test`.
-- `src/**/*.spec.ts`: pruebas unitarias ejecutadas con Vitest.
-
-## Calidad
-
-```powershell
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm build
+```
+Web app (Next.js)  ──►  Operia API (NestJS)  ──►  PostgreSQL
+                         │
+                         ├─ email outbox worker (SMTP)
+                         └─ Telegram bot (long polling)
 ```
 
-`test:e2e` requiere PostgreSQL disponible y usa únicamente `operia_test`. La
-limitación de tasa y la persistencia de sesiones son locales al proceso/base,
-respectivamente; el login demo no constituye autenticación de producción.
+```
+src/
+├─ auth/            login, logout, opaque sessions, inactivity and cleanup
+├─ companies/       company list and active-company switch
+├─ users/, roles/, permissions/   user management, roles and permission catalog
+├─ customers/, customer-account/  customers, balances and applied payments
+├─ products/, elem-types/, inventory/   catalog, categories and stock
+├─ documents/       sales documents
+├─ cash/            cash sessions, collections and closing
+├─ dashboard/       daily summary and recent activity
+├─ notifications/, telegram/      in-app and email notifications, Telegram orders
+├─ geo/             provinces and localities lookup
+├─ docs/            OpenAPI contract and Swagger UI
+├─ common/          HTTP security, errors, i18n (es/en), rate limiting, helpers
+├─ config/          environment validation
+└─ database/        Prisma service
+prisma/             schema, migrations and seed
+test/               end-to-end tests
+docs/               architecture decisions and multi-tenancy notes
+```
 
-Las pruebas E2E eliminan sus sesiones y los clientes creados con el dominio
-reservado `@e2e.operia.invalid` antes y después de cada caso. Los clientes demo
-se conservan como fixtures para comprobar el aislamiento. La suite no requiere
-un orden de ejecución particular.
+More detail: [architecture decisions](docs/decisions.md) and [multi-tenancy model](docs/multitenancy.md) (written in Spanish).
+
+## Getting started
+
+Requirements: Node.js 22, pnpm 11 and PostgreSQL 16.
+
+```bash
+cp .env.example .env      # then edit DATABASE_URL and the demo passwords
+pnpm install
+pnpm db:setup             # generate client, apply migrations, load demo data
+pnpm start:dev
+```
+
+The API listens on `http://localhost:3001`. Check it with:
+
+```bash
+curl http://localhost:3001/health
+```
+
+The demo users and their passwords come from `.env.example`. They are public by design: use them only locally and never reuse them anywhere else.
+
+The full project also ships a Docker Compose setup (API, web app, PostgreSQL and a local mail catcher). It applies the migrations on start and loads the demo data only when `RUN_SEED=true`.
+
+## API documentation
+
+With `DOCS_ENABLED=true` (the default outside production):
+
+- Swagger UI: `http://localhost:3001/docs`
+- OpenAPI contract: `http://localhost:3001/docs-json`
+- Export the contract without a database: `pnpm openapi:export` (writes `openapi.json`)
+
+Example login, keeping the session cookie in a file:
+
+```bash
+curl -c cookies.txt -H "Content-Type: application/json" \
+  -d '{"email":"demo@operia.local","password":"<demo password>"}' \
+  http://localhost:3001/auth/login
+curl -b cookies.txt http://localhost:3001/auth/me
+```
+
+## Scripts
+
+| Command                       | What it does                                                       |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `pnpm start:dev`              | Start NestJS in watch mode                                         |
+| `pnpm build`                  | Generate the Prisma client and compile                             |
+| `pnpm test`                   | Unit tests                                                         |
+| `pnpm test:e2e`               | Prepare and seed `operia_test`, then run the end-to-end tests      |
+| `pnpm lint` / `pnpm format:check` | ESLint and Prettier checks                                     |
+| `pnpm typecheck`              | Type-check the whole project                                       |
+| `pnpm audit:prod`             | Audit production dependencies                                      |
+| `pnpm prisma:migrate:dev`     | Create and apply migrations in development                         |
+| `pnpm prisma:migrate:deploy`  | Apply existing migrations without resetting data                   |
+| `pnpm prisma:seed`            | Run the idempotent seed                                            |
+| `pnpm openapi:export`         | Export the OpenAPI contract to `openapi.json`                      |
+
+End-to-end tests refuse to run unless `DATABASE_URL_TEST` ends exactly in `/operia_test`, so they can never touch the development database. `operia_test` is created by `../.docker/postgres/init.sql` when the PostgreSQL volume is first initialized; create it manually if your volume already existed.
+
+## Configuration
+
+All variables are validated at startup. `DATABASE_URL` and the demo passwords (at least 12 characters) are required; everything else has a default.
+
+| Variable                                | Default                     | Description                                               |
+| --------------------------------------- | --------------------------- | --------------------------------------------------------- |
+| `DATABASE_URL`                          | required                    | PostgreSQL connection string                              |
+| `DATABASE_URL_TEST`                     | none                        | Test database, must end in `/operia_test`                 |
+| `PORT`                                  | `3001`                      | HTTP port                                                 |
+| `ALLOWED_ORIGINS`                       | `http://localhost:3000`     | Comma-separated origins for CORS and origin checks        |
+| `SESSION_TTL_HOURS`                     | `8`                         | Maximum session age                                       |
+| `SESSION_IDLE_MINUTES`                  | `60`                        | Inactivity timeout, `0` disables it                       |
+| `SESSION_MAX_PER_USER`                  | `10`                        | Concurrent sessions per user; the oldest are dropped      |
+| `SESSION_CLEANUP_MINUTES`               | `60`                        | Expired-session cleanup interval, `0` disables it         |
+| `COOKIE_SECURE`                         | `true` in production        | Send the session cookie only over HTTPS                   |
+| `DOCS_ENABLED`                          | `false` in production       | Expose `/docs` and `/docs-json`                           |
+| `TRUST_PROXY_HOPS`                      | `0`                         | Number of trusted reverse proxies (`1` behind one proxy)  |
+| `RATE_LIMIT_LOGIN_ATTEMPTS`             | `5`                         | Login attempts per IP and email in the window             |
+| `RATE_LIMIT_LOGIN_IP_ATTEMPTS`          | `30`                        | Login attempts per IP in the window                       |
+| `RATE_LIMIT_LOGIN_ACCOUNT_ATTEMPTS`     | `100`                       | Login attempts per email in the window                    |
+| `RATE_LIMIT_LOGIN_WINDOW_MINUTES`       | `15`                        | Login rate-limit window                                   |
+| `RATE_LIMIT_API_PER_MINUTE`             | `600`                       | Authenticated requests per session per minute             |
+| `RATE_LIMIT_ANONYMOUS_PER_MINUTE`       | `100`                       | Anonymous requests per IP per minute                      |
+| `SMTP_*`, `MAIL_FROM`, `MAIL_POLL_SECONDS`, `MAIL_MAX_ATTEMPTS` | empty / `15` / `6` | Outgoing email through the outbox worker       |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_POLL_SECONDS` | empty / `0` (off)     | Telegram orders; run polling on a single instance only    |
+
+Local sample values are in `.env.example`.
+
+## Project status
+
+This is a demo project that is actively developed.
+
+- Rate limiting is in memory per process; use a shared store before running several replicas.
+- Session data lives in PostgreSQL, but there is no distributed cache.
+- The demo login and credentials are meant for demonstration, not for production use.
+- The API must sit behind an edge proxy that sets `X-Forwarded-For` (with `TRUST_PROXY_HOPS=1`) and should not be exposed directly to the internet.
+
+## Related
+
+- Web application: <!-- TODO: link to the front-end repository -->
+
+## Author
+
+- Matias Oliva
+- www.linkedin.com/in/matias-oliva-rqta
+- matias.oliva.rqta@gmail.com
