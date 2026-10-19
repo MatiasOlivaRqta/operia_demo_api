@@ -1,0 +1,10 @@
+process.env.DATABASE_URL ??= "postgresql://operia:placeholder@127.0.0.1:1/operia";
+process.env.DEMO_USER_PASSWORD ??= "unit-test-demo-password";
+process.env.HOGAR_USER_PASSWORD ??= "unit-test-hogar-password";
+process.env.MAIL_POLL_SECONDS = "0";
+process.env.SESSION_CLEANUP_MINUTES = "0";
+process.env.SESSION_IDLE_MINUTES = "0";
+process.env.TRUST_PROXY_HOPS = "1";
+process.env.SMTP_HOST ??= "smtp.e2e.operia.invalid";
+process.env.MAIL_FROM ??= "operia@e2e.operia.invalid";
+process.env.CASH_ALERT_EMAILS ??= "caja@e2e.operia.invalid";

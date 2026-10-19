@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "baseUrl": ".",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "prisma/**/*.ts",
+    "prisma.config.ts",
+    "vitest.config.mts",
+    "vitest.e2e.config.mts"
+  ],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

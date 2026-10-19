@@ -1,0 +1,1 @@
+export const CASH_ALERT_RECIPIENTS = Symbol("CASH_ALERT_RECIPIENTS");

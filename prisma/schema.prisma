@@ -1,0 +1,507 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("customer_status")
+}
+
+enum VatCondition {
+  FINAL_CONSUMER      @map("CONSUMIDOR_FINAL")
+  EXEMPT              @map("EXENTO")
+  MONOTRIBUTISTA
+  REGISTERED_TAXPAYER @map("RESPONSABLE_INSCRIPTO")
+
+  @@map("vat_condition")
+}
+
+enum PersonType {
+  NATURAL @map("FISICA")
+  LEGAL   @map("JURIDICA")
+
+  @@map("person_type")
+}
+
+enum DocumentType {
+  DNI
+  CUIT
+  PASSPORT @map("PASAPORTE")
+
+  @@map("document_type")
+}
+
+enum CashSessionStatus {
+  OPEN   @map("O")
+  CLOSED @map("C")
+
+  @@map("cash_session_status")
+}
+
+enum CashMovementType {
+  COBRO @map("C")
+
+  @@map("cash_movement_type")
+}
+
+enum CashPaymentMethod {
+  CASH
+  TRANSFER
+  CARD
+
+  @@map("cash_payment_method")
+}
+
+model Company {
+  id                 String              @id
+  legalName          String              @map("legal_name")
+  name               String
+  memberships        Membership[]
+  roles              Role[]
+  sessions           Session[]
+  customers          Customer[]
+  products           Product[]
+  elemSubTypes       ElemSubType[]
+  documents          Document[]
+  cashSessions       CashSession[]
+  cashMovements      CashMovement[]
+  receiptCounter     ReceiptCounter?
+  accountEntries     AccountEntry[]
+  mailOutbox         MailOutbox[]
+  notifications      Notification[]
+  telegramChats      TelegramChat[]
+  telegramLinkTokens TelegramLinkToken[]
+
+  @@map("companies")
+}
+
+model User {
+  id                 String        @id @default(uuid()) @db.Uuid
+  email              String        @unique
+  name               String
+  passwordHash       String        @map("password_hash")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  memberships        Membership[]
+  sessions           Session[]
+  openedCashSessions CashSession[] @relation("CashSessionOpenedBy")
+  closedCashSessions CashSession[] @relation("CashSessionClosedBy")
+
+  @@map("users")
+}
+
+model Membership {
+  userId    String  @map("user_id") @db.Uuid
+  companyId String  @map("company_id")
+  roleId    String  @map("role_id") @db.Uuid
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role      Role    @relation(fields: [roleId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@id([userId, companyId])
+  @@index([companyId])
+  @@index([roleId])
+  @@map("memberships")
+}
+
+model Role {
+  id          String       @id @default(uuid()) @db.Uuid
+  companyId   String       @map("company_id")
+  name        String
+  permissions String[]
+  isSystem    Boolean      @default(false) @map("is_system")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+
+  @@unique([companyId, name])
+  @@unique([id, companyId])
+  @@index([companyId])
+  @@map("roles")
+}
+
+model Session {
+  id              String   @id @default(uuid()) @db.Uuid
+  tokenHash       String   @unique @map("token_hash")
+  userId          String   @map("user_id") @db.Uuid
+  activeCompanyId String   @map("active_company_id")
+  expiresAt       DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt      DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeCompany   Company  @relation(fields: [activeCompanyId], references: [id], onDelete: Restrict)
+
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Customer {
+  id             String         @default(uuid())
+  companyId      String         @map("company_id")
+  personType     PersonType     @default(LEGAL) @map("person_type")
+  documentType   DocumentType   @default(CUIT) @map("document_type")
+  documentNumber String         @map("document_number") @db.VarChar(20)
+  legalName      String         @map("legal_name")
+  commercialName String         @map("commercial_name")
+  contactName    String         @map("contact_name")
+  email          String         @map("contact_email")
+  phone          String         @map("contact_phone")
+  address        String
+  city           String
+  fiscalAddress  String         @map("fiscal_address")
+  locality       String
+  postalCode     String         @map("postal_code")
+  province       String
+  priceList      String         @map("price_list")
+  status         CustomerStatus
+  vatCondition   VatCondition   @map("vat_condition")
+  searchText     String         @default("") @map("search_text")
+  nameNormalized String         @default("") @map("name_normalized")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  documents      Document[]
+  cashMovements  CashMovement[]
+  accountEntries AccountEntry[]
+
+  @@id([id, companyId])
+  @@unique([companyId, documentType, documentNumber])
+  @@index([companyId, nameNormalized, id], map: "customers_company_id_name_normalized_id_idx")
+  @@index([companyId, status, nameNormalized, id], map: "customers_company_id_status_name_normalized_id_idx")
+  @@index([companyId, vatCondition, nameNormalized, id], map: "customers_company_id_vat_condition_name_normalized_id_idx")
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "customers_search_text_trgm_idx")
+  @@map("customers")
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("product_status")
+}
+
+enum StockMovementType {
+  INGRESO
+  SALIDA
+  AJUSTE
+  REVERSION
+
+  @@map("stock_movement_type")
+}
+
+enum DocumentStatus {
+  PENDING
+  PARTIAL
+  COMPLETED
+  CANCELLED
+
+  @@map("document_status")
+}
+
+/// The low-stock partial index is maintained by SQL because Prisma cannot represent its WHERE clause.
+/// Keep it in migrations; Prisma migrate diff will report it as a difference from this schema.
+model Product {
+  id             String          @default(uuid())
+  companyId      String          @map("company_id")
+  sku            String
+  barcode        String          @default("")
+  name           String
+  categoryId     String          @map("category_id")
+  unit           String
+  costCents      Int             @map("cost_cents")
+  priceCents     Int             @map("price_cents")
+  minimumStock   Int             @map("minimum_stock")
+  stockOnHand    Int             @map("stock_on_hand")
+  status         ProductStatus
+  searchText     String          @map("search_text")
+  nameNormalized String          @map("name_normalized")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category       ElemSubType     @relation(fields: [categoryId, companyId], references: [id, companyId], onDelete: Restrict)
+  movements      StockMovement[]
+
+  @@id([id, companyId])
+  @@index([categoryId, companyId], map: "products_category_id_company_id_idx")
+  @@index([companyId, status, nameNormalized, id], map: "products_company_id_status_name_normalized_id_idx")
+  @@index([companyId, nameNormalized, id], map: "products_company_id_name_normalized_id_idx")
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_search_text_trgm_idx")
+  @@map("products")
+}
+
+model ElemType {
+  id          String        @id @db.VarChar(50)
+  description String        @db.VarChar(100)
+  subTypes    ElemSubType[]
+
+  @@map("elem_types")
+}
+
+model ElemSubType {
+  id                    String    @default(uuid())
+  companyId             String    @map("company_id")
+  elemTypeId            String    @map("elem_type_id") @db.VarChar(50)
+  description           String    @db.VarChar(100)
+  descriptionNormalized String    @map("description_normalized") @db.VarChar(100)
+  company               Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  elemType              ElemType  @relation(fields: [elemTypeId], references: [id], onDelete: Restrict)
+  products              Product[]
+
+  @@id([id, companyId])
+  @@unique([companyId, elemTypeId, descriptionNormalized], map: "elem_sub_types_company_type_desc_key")
+  @@map("elem_sub_types")
+}
+
+model StockMovement {
+  id                 String            @default(uuid())
+  companyId          String            @map("company_id")
+  productId          String            @map("product_id")
+  type               StockMovementType
+  quantity           Int
+  reference          String
+  note               String
+  documentId         String?           @map("document_id")
+  reversesMovementId String?           @map("reverses_movement_id")
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  product            Product           @relation(fields: [productId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@id([id, companyId])
+  @@unique([companyId, reversesMovementId], map: "stock_movements_company_id_reverses_movement_id_key")
+  @@index([companyId, productId, createdAt(sort: Desc), id(sort: Desc)], map: "stock_movements_company_id_product_id_created_at_id_idx")
+  @@index([companyId, createdAt(sort: Desc), id(sort: Desc)], map: "stock_movements_company_id_created_at_id_idx")
+  @@index([companyId, type, createdAt(sort: Desc), id(sort: Desc)], map: "stock_movements_company_id_type_created_at_id_idx")
+  @@map("stock_movements")
+}
+
+model Document {
+  id                 String         @default(uuid())
+  companyId          String         @map("company_id")
+  customerId         String         @map("customer_id")
+  customerName       String         @map("customer_name")
+  internalNumber     String         @map("internal_number")
+  pointOfSale        String         @default("0001") @map("point_of_sale")
+  status             DocumentStatus @default(PENDING)
+  cancellationReason String?        @map("cancellation_reason")
+  cancelledAt        DateTime?      @map("cancelled_at") @db.Timestamptz(3)
+  totalCents         Int            @map("total_cents")
+  idempotencyKey     String         @map("idempotency_key")
+  requestFingerprint String         @map("request_fingerprint")
+  searchText         String         @map("search_text")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  customer           Customer       @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict)
+  company            Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items              DocumentItem[]
+  cashMovements      CashMovement[]
+  accountEntries     AccountEntry[]
+
+  @@id([id, companyId])
+  @@unique([companyId, internalNumber], map: "documents_company_id_internal_number_key")
+  @@unique([companyId, idempotencyKey], map: "documents_company_id_idempotency_key_key")
+  @@index([companyId, createdAt(sort: Desc), id(sort: Desc)], map: "documents_company_id_created_at_id_idx")
+  @@index([companyId, customerId, createdAt(sort: Desc)], map: "documents_company_id_customer_id_created_at_idx")
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "documents_search_text_trgm_idx")
+  @@map("documents")
+}
+
+model DocumentItem {
+  id             String   @default(uuid())
+  companyId      String   @map("company_id")
+  documentId     String   @map("document_id")
+  position       Int
+  productId      String   @map("product_id")
+  productName    String   @map("product_name")
+  sku            String
+  quantity       Int
+  unitPriceCents Int      @map("unit_price_cents")
+  discountRate   Decimal  @map("discount_rate") @db.Decimal(5, 2)
+  taxRate        Decimal  @map("tax_rate") @db.Decimal(5, 2)
+  document       Document @relation(fields: [documentId, companyId], references: [id, companyId], onDelete: Cascade)
+
+  @@id([id, companyId])
+  @@index([companyId, documentId, position], map: "document_items_company_id_document_id_position_idx")
+  @@map("document_items")
+}
+
+model DocumentCounter {
+  companyId  String @id @map("company_id")
+  lastNumber Int    @map("last_number")
+
+  @@map("document_counters")
+}
+
+model CashSession {
+  id                 String            @default(uuid())
+  companyId          String            @map("company_id")
+  status             CashSessionStatus @default(OPEN)
+  openedAt           DateTime          @default(now()) @map("opened_at") @db.Timestamptz(3)
+  closedAt           DateTime?         @map("closed_at") @db.Timestamptz(3)
+  openedByUserId     String            @map("opened_by_user_id") @db.Uuid
+  closedByUserId     String?           @map("closed_by_user_id") @db.Uuid
+  openingBalance     Int               @map("opening_balance")
+  declaredBalance    BigInt?           @map("declared_balance")
+  theoreticalBalance BigInt?           @map("theoretical_balance")
+  difference         BigInt?
+  observation        String?
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  openedBy           User              @relation("CashSessionOpenedBy", fields: [openedByUserId], references: [id], onDelete: Restrict)
+  closedBy           User?             @relation("CashSessionClosedBy", fields: [closedByUserId], references: [id], onDelete: Restrict)
+  movements          CashMovement[]
+
+  @@id([id, companyId])
+  @@index([companyId], map: "cash_sessions_company_id_idx")
+  @@map("cash_sessions")
+}
+
+model CashMovement {
+  id                 String            @default(uuid())
+  companyId          String            @map("company_id")
+  sessionId          String            @map("session_id")
+  type               CashMovementType
+  paymentMethod      CashPaymentMethod @map("payment_method")
+  customerId         String            @map("customer_id")
+  customerName       String            @map("customer_name")
+  documentId         String?           @map("document_id")
+  documentNumber     String?           @map("document_number")
+  receiptNumber      String            @map("receipt_number")
+  amount             Int
+  idempotencyKey     String?           @map("idempotency_key")
+  requestFingerprint String?           @map("request_fingerprint")
+  accountEntries     AccountEntry[]
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cashSession        CashSession       @relation(fields: [sessionId, companyId], references: [id, companyId], onDelete: Restrict)
+  customer           Customer          @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict)
+  document           Document?         @relation(fields: [documentId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@id([id, companyId])
+  @@unique([companyId, receiptNumber], map: "cash_movements_company_id_receipt_number_key")
+  @@unique([companyId, idempotencyKey], map: "cash_movements_company_id_idempotency_key_key")
+  @@index([companyId, createdAt(sort: Desc), id(sort: Desc)], map: "cash_movements_company_id_created_at_id_idx")
+  @@index([companyId, customerId, createdAt(sort: Desc)], map: "cash_movements_company_id_customer_id_created_at_idx")
+  @@index([companyId, sessionId, createdAt(sort: Desc), id(sort: Desc)], map: "cash_movements_company_id_session_id_created_at_id_idx")
+  @@index([companyId, sessionId, paymentMethod], map: "cash_movements_company_id_session_id_payment_method_idx")
+  @@map("cash_movements")
+}
+
+model ReceiptCounter {
+  companyId  String  @id @map("company_id")
+  lastNumber Int     @map("last_number")
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("receipt_counters")
+}
+
+enum AccountEntryType {
+  PAYMENT_APPLIED  @map("P")
+  CREDIT_GENERATED @map("G")
+  CREDIT_APPLIED   @map("A")
+
+  @@map("account_entry_type")
+}
+
+enum MailOutboxStatus {
+  PENDING @map("P")
+  SENT    @map("S")
+  FAILED  @map("F")
+
+  @@map("mail_outbox_status")
+}
+
+enum MailOutboxType {
+  CASH_CLOSE_DIFFERENCE
+
+  @@map("mail_outbox_type")
+}
+
+enum NotificationType {
+  ORDER_MESSAGE
+
+  @@map("notification_type")
+}
+
+model AccountEntry {
+  id             String           @default(uuid())
+  companyId      String           @map("company_id")
+  customerId     String           @map("customer_id")
+  type           AccountEntryType
+  amount         Int
+  documentId     String?          @map("document_id")
+  cashMovementId String?          @map("cash_movement_id")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer       Customer         @relation(fields: [customerId, companyId], references: [id, companyId], onDelete: Restrict)
+  document       Document?        @relation(fields: [documentId, companyId], references: [id, companyId], onDelete: Restrict)
+  cashMovement   CashMovement?    @relation(fields: [cashMovementId, companyId], references: [id, companyId], onDelete: Restrict)
+
+  @@id([id, companyId])
+  @@index([companyId, customerId, createdAt], map: "account_entries_company_id_customer_id_created_at_idx")
+  @@index([companyId, cashMovementId], map: "account_entries_company_id_cash_movement_id_idx")
+  @@index([companyId, documentId], map: "account_entries_company_id_document_id_full_idx")
+  @@map("account_entries")
+}
+
+model MailOutbox {
+  id              String           @id @default(uuid()) @db.Uuid
+  companyId       String           @map("company_id")
+  type            MailOutboxType
+  notificationKey String           @unique @map("notification_key")
+  recipients      String[]
+  payload         Json
+  status          MailOutboxStatus @default(PENDING)
+  attempts        Int              @default(0)
+  nextAttemptAt   DateTime         @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lockedUntil     DateTime?        @map("locked_until") @db.Timestamptz(3)
+  lastError       String?          @map("last_error")
+  sentAt          DateTime?        @map("sent_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt], map: "mail_outbox_status_next_attempt_at_idx")
+  @@map("mail_outbox")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  companyId String           @map("company_id")
+  type      NotificationType
+  title     String
+  body      String
+  payload   Json
+  readAt    DateTime?        @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  dedupeKey String?          @map("dedupe_key")
+  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, dedupeKey])
+  @@index([companyId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model TelegramChat {
+  chatId    String   @id @map("chat_id")
+  companyId String   @map("company_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("telegram_chats")
+}
+
+model TelegramLinkToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  companyId String    @map("company_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("telegram_link_tokens")
+}
