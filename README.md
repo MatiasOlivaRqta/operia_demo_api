@@ -39,18 +39,17 @@ This repository is the **API**. The web application that consumes it lives in it
 | Security      | argon2id, Helmet, rate limiting, origin checks                 |
 | Testing       | Vitest (unit) and Supertest (end-to-end against a test database) |
 | Documentation | OpenAPI contract with Swagger UI                               |
-| Tooling       | pnpm 11, ESLint, Prettier, Docker Compose                      |
+| Tooling       | pnpm 11, ESLint, Prettier                      |
 
 ## Security and quality highlights
 
 - Passwords hashed with **argon2id**; login returns a random opaque token and the database stores only its **SHA-256**.
 - Session cookie is `HttpOnly` and `SameSite=Lax`, `Secure` by default in production, and is cleared on any authentication failure.
-- Sessions expire by age, by **inactivity** (60 minutes by default), are capped per user, are purged periodically and can be closed all at once with `POST /auth/logout-all`.
+- Sessions expire by age, by **inactivity** (60 minutes by default), are capped per user, are purged periodically.
 - **Rate limiting** for login (per IP, per IP and email, and per email) and for the API in general; trusted proxy hops are configurable.
 - State-changing requests validate `Origin`/`Referer` against an allow-list; request bodies are limited to 32 KB and oversized requests answer `413`.
 - API documentation is off by default in production and its Swagger UI assets are pinned and checked with Subresource Integrity.
 - Dependency audit (`pnpm audit --prod`) reports no known vulnerabilities.
-- **435 unit tests and 198 end-to-end tests**; end-to-end tests only run against a dedicated `operia_test` database.
 - Built with a **spec-driven workflow**: behavior is written down as testable requirements before it is implemented.
 
 ## Architecture
@@ -82,8 +81,6 @@ prisma/             schema, migrations and seed
 test/               end-to-end tests
 docs/               architecture decisions and multi-tenancy notes
 ```
-
-More detail: [architecture decisions](docs/decisions.md) and [multi-tenancy model](docs/multitenancy.md) (written in Spanish).
 
 ## Getting started
 
@@ -182,8 +179,12 @@ This is a demo project that is actively developed.
 
 - Web application: <!-- TODO: link to the front-end repository -->
 
+## License
+
+All rights reserved. Source available for viewing and evaluation only. See [LICENSE](LICENSE).
+
 ## Author
 
-- Matias Oliva
-- www.linkedin.com/in/matias-oliva-rqta
-- matias.oliva.rqta@gmail.com
+**Matias Oliva** — Full-stack developer (NestJS · TypeScript · PostgreSQL)
+
+[LinkedIn](https://www.linkedin.com/in/matias-oliva-rqta) · [Email](mailto:matias.oliva.rqta@gmail.com)
