@@ -177,7 +177,7 @@ This is a demo project that is actively developed.
 
 ## Related
 
-- Web application: <!-- TODO: link to the front-end repository -->
+- [Web application](https://github.com/MatiasOlivaRqta/operia_demo_ui/tree/develop) (Next.js, React, TypeScript)
 
 ## License
 
